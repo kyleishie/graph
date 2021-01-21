@@ -1,4 +1,4 @@
-module graph
+module gitlab.com/blue360/graph
 
 go 1.14
 
