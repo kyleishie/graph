@@ -58,14 +58,8 @@ func (v *Vertex) MarshalAttributeValueMap(partition *string) (map[string]*dynamo
 }
 
 func (v *Vertex) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
-	type Alias Vertex
-	aliasedV := &struct {
-		Partition string          `json:"__p" csv:"__p" xml:"__p"`
-		Sort      string          `json:"__s" csv:"__s" xml:"__s"`
-		Attr      json.RawMessage `json:"__a" csv:"__a" xml:"__a"`
-		*Alias
-	}{
-		Alias: (*Alias)(v),
+	aliasedV := &vertexDDBRepresentation{
+		vertexAlias: (*vertexAlias)(v),
 	}
 
 	if err := dynamodbattribute.UnmarshalMap(m, aliasedV); err != nil {

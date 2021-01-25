@@ -123,7 +123,7 @@ func (e Edge) Mirror() Edge {
 	Writes an Edge to the tableName.
 	NOTE: This call fails if the two vertices have not previously been written.
 */
-func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
+func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
 
 	/// Create an Edge from V1 out to v2
 	v1Outv2 := Edge{
