@@ -131,7 +131,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 		V1:        V1,
 		V2:        V2,
 		Direction: OUT,
-		g:         V1.g,
+		g:         g,
 	}
 	if Attr != nil {
 		attr, err := json.Marshal(Attr)
@@ -204,7 +204,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 						PartitionKeyName: {S: V1.graphId()},
 						SortKeyName:      {S: V1.graphId()},
 					},
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 
@@ -218,7 +218,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 						PartitionKeyName: {S: V2.graphId()},
 						SortKeyName:      {S: V2.graphId()},
 					},
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 
@@ -226,7 +226,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
 					Item:      v1Outv2Map,
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 
@@ -234,7 +234,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
 					Item:      v2CopyMap,
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 
@@ -243,7 +243,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
 					Item:      v2InV1Map,
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 
@@ -251,7 +251,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
 					Item:      v1CopyMap,
-					TableName: &V1.g.tableName,
+					TableName: &g.tableName,
 				},
 			},
 		},
