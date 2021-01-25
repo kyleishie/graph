@@ -10,10 +10,12 @@ import (
 type Edge struct {
 	Direction edgeDirection `json:"__d" csv:"__d" xml:"__d"`
 	Label     string        `json:"__l" csv:"__l" xml:"__l"`
-	Attr      interface{}   `json:"__a" csv:"__a" xml:"__a"`
+	attr      map[string]*dynamodb.AttributeValue
 
 	V1 *Vertex `json:"-" csv:"-" xml:"-"`
 	V2 *Vertex `json:"-" csv:"-" xml:"-"`
+
+	g *graph
 }
 
 func (e *Edge) graphId() *string {
@@ -69,13 +71,37 @@ const (
 
 func (e *Edge) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
 	type Alias Edge
-	return dynamodbattribute.UnmarshalMap(m, &struct {
+	alias := struct {
 		Partition *string `json:"__p" csv:"__p" xml:"__p"`
 		Sort      *string `json:"__s" csv:"__s" xml:"__s"`
 		*Alias
 	}{
 		Alias: (*Alias)(e),
-	})
+	}
+	err := dynamodbattribute.UnmarshalMap(m, &alias)
+	if err != nil {
+		return err
+	}
+
+	par := strings.Split(*alias.Partition, keyDelimiter)
+	e.V1 = &Vertex{
+		Type: par[0],
+		Id:   par[1],
+		g:    e.g,
+	}
+
+	sort := strings.Split(*alias.Sort, keyDelimiter)
+	e.V2 = &Vertex{
+		Type: sort[1],
+		Id:   sort[2],
+		g:    e.g,
+	}
+
+	return nil
+}
+
+func (e *Edge) GetAttributesAs(out interface{}) error {
+	return dynamodbattribute.UnmarshalMap(e.attr, out)
 }
 
 func (e Edge) Mirror() Edge {
@@ -104,8 +130,16 @@ func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, er
 		V1:        V1,
 		V2:        V2,
 		Direction: OUT,
-		Attr:      Attr,
+		g:         V1.g,
 	}
+	if Attr != nil {
+		attr, err := dynamodbattribute.MarshalMap(Attr)
+		if err != nil {
+			return nil, err
+		}
+		v1Outv2.attr = attr
+	}
+
 	v1Outv2Map, err := v1Outv2.MarshalAttributeValueMap()
 	if err != nil {
 		return nil, err
@@ -126,7 +160,13 @@ func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, er
 		V1:        V2,
 		V2:        V1,
 		Direction: IN,
-		Attr:      Attr,
+	}
+	if Attr != nil {
+		attr, err := dynamodbattribute.MarshalMap(Attr)
+		if err != nil {
+			return nil, err
+		}
+		v2InV1.attr = attr
 	}
 	v2InV1Map, err := v2InV1.MarshalAttributeValueMap()
 	if err != nil {

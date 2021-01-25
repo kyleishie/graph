@@ -39,11 +39,4 @@ const (
 
 	PartitionKeyName = "__p"
 	SortKeyName      = "__s"
-
-	// Vertex
-	typeKey = "__t"
-	idKey   = "__i"
-
-	// Edge
-	labelKey = "__l"
 )

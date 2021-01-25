@@ -8,9 +8,9 @@ import (
 )
 
 type Vertex struct {
-	Type string      `json:"__t" csv:"__t" xml:"__t"`
-	Id   string      `json:"__i" csv:"__i" xml:"__i"`
-	Attr interface{} `json:"__a" csv:"__a" xml:"__a"`
+	Type string `json:"__t" csv:"__t" xml:"__t"`
+	Id   string `json:"__i" csv:"__i" xml:"__i"`
+	attr map[string]*dynamodb.AttributeValue
 	g    *graph
 }
 
@@ -25,12 +25,14 @@ func (v *Vertex) graphId() *string {
 func (v *Vertex) MarshalAttributeValueMap(partition *string) (map[string]*dynamodb.AttributeValue, error) {
 	type Alias Vertex
 	aliasedV := &struct {
-		Partition string `json:"__p" csv:"__p" xml:"__p"`
-		Sort      string `json:"__s" csv:"__s" xml:"__s"`
+		Partition string                              `json:"__p" csv:"__p" xml:"__p"`
+		Sort      string                              `json:"__s" csv:"__s" xml:"__s"`
+		Attr      map[string]*dynamodb.AttributeValue `json:"__a" csv:"__a" xml:"__a"`
 		*Alias
 	}{
 		Partition: v.Type + keyDelimiter + v.Id,
 		Sort:      v.Type + keyDelimiter + v.Id,
+		Attr:      v.attr,
 		Alias:     (*Alias)(v),
 	}
 	/// Check if the partition has been overridden.
@@ -49,10 +51,12 @@ func (v *Vertex) MarshalAttributeValueMap(partition *string) (map[string]*dynamo
 func (v *Vertex) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
 	type Alias Vertex
 	aliasedV := &struct {
-		Partition string `json:"__p" csv:"__p" xml:"__p"`
-		Sort      string `json:"__s" csv:"__s" xml:"__s"`
+		Partition string                              `json:"__p" csv:"__p" xml:"__p"`
+		Sort      string                              `json:"__s" csv:"__s" xml:"__s"`
+		Attr      map[string]*dynamodb.AttributeValue `json:"__a" csv:"__a" xml:"__a"`
 		*Alias
 	}{
+		Attr:  v.attr,
 		Alias: (*Alias)(v),
 	}
 
@@ -63,13 +67,24 @@ func (v *Vertex) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValu
 	return nil
 }
 
+func (v *Vertex) GetAttributesAs(out interface{}) error {
+	return dynamodbattribute.UnmarshalMap(v.attr, out)
+}
+
 func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
 
 	v := Vertex{
 		Type: Type,
 		Id:   Id,
-		Attr: Attr,
 		g:    g,
+	}
+
+	if Attr != nil {
+		attr, err := dynamodbattribute.MarshalMap(Attr)
+		if err != nil {
+			return nil, err
+		}
+		v.attr = attr
 	}
 
 	vMap, err := v.MarshalAttributeValueMap(nil)
@@ -93,7 +108,7 @@ func (g *graph) GetVertex(Type, Id string) (*Vertex, error) {
 	v := Vertex{
 		Type: Type,
 		Id:   Id,
-		Attr: nil,
+		attr: nil,
 		g:    g,
 	}
 

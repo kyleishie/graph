@@ -57,4 +57,11 @@ func main() {
 
 	fmt.Println(v)
 
+	switch v.Attr.(type) {
+	case Person:
+		fmt.Println("Person")
+	default:
+		fmt.Println("Unhandled event")
+	}
+
 }
