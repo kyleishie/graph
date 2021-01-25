@@ -188,7 +188,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 	}
 
 	/// See the comments inline with the individual transact items.
-	_, err = V1.g.dynamodb.TransactWriteItems(&dynamodb.TransactWriteItemsInput{
+	_, err = g.dynamodb.TransactWriteItems(&dynamodb.TransactWriteItemsInput{
 		ClientRequestToken:          nil,
 		ReturnConsumedCapacity:      nil,
 		ReturnItemCollectionMetrics: nil,
