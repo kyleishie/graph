@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
@@ -10,7 +11,7 @@ import (
 type Vertex struct {
 	Type string `json:"__t" csv:"__t" xml:"__t"`
 	Id   string `json:"__i" csv:"__i" xml:"__i"`
-	attr map[string]*dynamodb.AttributeValue
+	attr json.RawMessage
 	g    *graph
 }
 
@@ -19,28 +20,36 @@ func (v *Vertex) graphId() *string {
 	return &p
 }
 
+type vertexAlias Vertex
+type vertexDDBRepresentation struct {
+	Partition string          `json:"__p" csv:"__p" xml:"__p"`
+	Sort      string          `json:"__s" csv:"__s" xml:"__s"`
+	Attr      json.RawMessage `json:"__a" csv:"__a" xml:"__a"`
+	*vertexAlias
+}
+
 /*
 	partition is only needed for Second Class vertices.
 */
 func (v *Vertex) MarshalAttributeValueMap(partition *string) (map[string]*dynamodb.AttributeValue, error) {
-	type Alias Vertex
-	aliasedV := &struct {
-		Partition string                              `json:"__p" csv:"__p" xml:"__p"`
-		Sort      string                              `json:"__s" csv:"__s" xml:"__s"`
-		Attr      map[string]*dynamodb.AttributeValue `json:"__a" csv:"__a" xml:"__a"`
-		*Alias
-	}{
-		Partition: v.Type + keyDelimiter + v.Id,
-		Sort:      v.Type + keyDelimiter + v.Id,
-		Attr:      v.attr,
-		Alias:     (*Alias)(v),
+	aliasedV := vertexDDBRepresentation{
+		Partition:   v.Type + keyDelimiter + v.Id,
+		Sort:        v.Type + keyDelimiter + v.Id,
+		Attr:        v.attr,
+		vertexAlias: (*vertexAlias)(v),
 	}
 	/// Check if the partition has been overridden.
 	if partition != nil {
 		aliasedV.Partition = *partition
 	}
 
-	vMap, err := dynamodbattribute.MarshalMap(aliasedV)
+	//if len(v.attr) > 0 {
+	//	if err := json.Unmarshal(v.attr, &aliasedV.Attr); err != nil {
+	//		return nil, err
+	//	}
+	//}
+
+	vMap, err := dynamodbattribute.MarshalMap(&aliasedV)
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +60,11 @@ func (v *Vertex) MarshalAttributeValueMap(partition *string) (map[string]*dynamo
 func (v *Vertex) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
 	type Alias Vertex
 	aliasedV := &struct {
-		Partition string                              `json:"__p" csv:"__p" xml:"__p"`
-		Sort      string                              `json:"__s" csv:"__s" xml:"__s"`
-		Attr      map[string]*dynamodb.AttributeValue `json:"__a" csv:"__a" xml:"__a"`
+		Partition string          `json:"__p" csv:"__p" xml:"__p"`
+		Sort      string          `json:"__s" csv:"__s" xml:"__s"`
+		Attr      json.RawMessage `json:"__a" csv:"__a" xml:"__a"`
 		*Alias
 	}{
-		Attr:  v.attr,
 		Alias: (*Alias)(v),
 	}
 
@@ -64,11 +72,13 @@ func (v *Vertex) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValu
 		return err
 	}
 
+	v.attr = aliasedV.Attr
+
 	return nil
 }
 
 func (v *Vertex) GetAttributesAs(out interface{}) error {
-	return dynamodbattribute.UnmarshalMap(v.attr, out)
+	return json.Unmarshal(v.attr, out)
 }
 
 func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
@@ -80,7 +90,7 @@ func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
 	}
 
 	if Attr != nil {
-		attr, err := dynamodbattribute.MarshalMap(Attr)
+		attr, err := json.Marshal(Attr)
 		if err != nil {
 			return nil, err
 		}

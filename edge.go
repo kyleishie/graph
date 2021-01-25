@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
@@ -10,7 +11,7 @@ import (
 type Edge struct {
 	Direction edgeDirection `json:"__d" csv:"__d" xml:"__d"`
 	Label     string        `json:"__l" csv:"__l" xml:"__l"`
-	attr      map[string]*dynamodb.AttributeValue
+	attr      json.RawMessage
 
 	V1 *Vertex `json:"-" csv:"-" xml:"-"`
 	V2 *Vertex `json:"-" csv:"-" xml:"-"`
@@ -41,47 +42,47 @@ func (e edgeDirection) String() string {
 	}
 }
 
+type edgeAlias Edge
+type edgeDDBRepresentation struct {
+	Partition *string         `json:"__p" csv:"__p" xml:"__p"`
+	Sort      *string         `json:"__s" csv:"__s" xml:"__s"`
+	Attr      json.RawMessage `json:"__a" csv:"__a" xml:"__a"`
+
+	*edgeAlias
+}
+
 func (e *Edge) MarshalAttributeValueMap() (map[string]*dynamodb.AttributeValue, error) {
-	type Alias Edge
-	return dynamodbattribute.MarshalMap(&struct {
-		Partition *string `json:"__p" csv:"__p" xml:"__p"`
-		Sort      *string `json:"__s" csv:"__s" xml:"__s"`
-		*Alias
-	}{
+	return dynamodbattribute.MarshalMap(&edgeDDBRepresentation{
 		Partition: e.V1.graphId(),
 		Sort:      e.graphId(),
-		Alias:     (*Alias)(e),
+		Attr:      e.attr,
+		edgeAlias: (*edgeAlias)(e),
 	})
 }
 
-type EdgeValidationError int
-
-func (err EdgeValidationError) Error() string {
-	switch err {
-	case NotAnEdge:
-		return "The given map is not an edge representation."
-	}
-
-	return ""
-}
-
-const (
-	NotAnEdge = EdgeValidationError(iota)
-)
+//type EdgeValidationError int
+//
+//func (err EdgeValidationError) Error() string {
+//	switch err {
+//	case NotAnEdge:
+//		return "The given map is not an edge representation."
+//	}
+//
+//	return ""
+//}
+//
+//const (
+//	NotAnEdge = EdgeValidationError(iota)
+//)
 
 func (e *Edge) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
-	type Alias Edge
-	alias := struct {
-		Partition *string `json:"__p" csv:"__p" xml:"__p"`
-		Sort      *string `json:"__s" csv:"__s" xml:"__s"`
-		*Alias
-	}{
-		Alias: (*Alias)(e),
+	alias := edgeDDBRepresentation{
+		edgeAlias: (*edgeAlias)(e),
 	}
-	err := dynamodbattribute.UnmarshalMap(m, &alias)
-	if err != nil {
+	if err := dynamodbattribute.UnmarshalMap(m, &alias); err != nil {
 		return err
 	}
+	e.attr = alias.Attr
 
 	par := strings.Split(*alias.Partition, keyDelimiter)
 	e.V1 = &Vertex{
@@ -101,7 +102,7 @@ func (e *Edge) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue)
 }
 
 func (e *Edge) GetAttributesAs(out interface{}) error {
-	return dynamodbattribute.UnmarshalMap(e.attr, out)
+	return json.Unmarshal(e.attr, out)
 }
 
 func (e Edge) Mirror() Edge {
@@ -133,7 +134,7 @@ func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, er
 		g:         V1.g,
 	}
 	if Attr != nil {
-		attr, err := dynamodbattribute.MarshalMap(Attr)
+		attr, err := json.Marshal(Attr)
 		if err != nil {
 			return nil, err
 		}
@@ -162,7 +163,7 @@ func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, er
 		Direction: IN,
 	}
 	if Attr != nil {
-		attr, err := dynamodbattribute.MarshalMap(Attr)
+		attr, err := json.Marshal(Attr)
 		if err != nil {
 			return nil, err
 		}
