@@ -12,12 +12,12 @@ type traversalContext struct {
 }
 
 type traversalVertex struct {
-	v vertex
-	e []edge
+	v Vertex
+	e []Edge
 }
 
 type traversalEdge struct {
-	e edge
+	e Edge
 }
 
 //func (g *graph) GetVertices(Type, Id string) *traversalContext {
@@ -33,8 +33,8 @@ type traversalEdge struct {
 //		},
 //	}
 //
-//	pCon := expr.Key(partitionKeyName).Equal(expr.Value(graphId))
-//	sCon := expr.Key(sortKeyName).Equal(expr.Value(graphId))
+//	pCon := expr.Key(PartitionKeyName).Equal(expr.Value(graphId))
+//	sCon := expr.Key(SortKeyName).Equal(expr.Value(graphId))
 //	expr, err := expr.NewBuilder().
 //		WithKeyCondition(pCon.And(sCon)).
 //		Build()
@@ -79,8 +79,8 @@ type traversalEdge struct {
 //func (t *traversalContext) Out(label string, out interface{}) *traversalContext {
 //
 //	graphId := Type + keyDelimiter + Id
-//	pCon := expr.Key(partitionKeyName).Equal(expr.Value(graphId))
-//	sCon := expr.Key(sortKeyName).Equal(expr.Value(graphId))
+//	pCon := expr.Key(PartitionKeyName).Equal(expr.Value(graphId))
+//	sCon := expr.Key(SortKeyName).Equal(expr.Value(graphId))
 //	expr, err := expr.NewBuilder().
 //		WithKeyCondition(pCon.And(sCon)).
 //		Build()

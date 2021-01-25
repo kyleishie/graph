@@ -1,105 +1,146 @@
 package graph
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"strings"
 )
 
-const (
-	incomingEdgeMarker = "<"
-	outgoingEdgeMarker = ">"
-)
+type Edge struct {
+	Direction edgeDirection `json:"__d" csv:"__d" xml:"__d"`
+	Label     string        `json:"__l" csv:"__l" xml:"__l"`
+	Attr      interface{}   `json:"__a" csv:"__a" xml:"__a"`
 
-type edge struct {
-	/// DO NOT MODIFY THIS UNLESS YOU ARE BIG BRAIN
-	Partition string `json:"__p" csv:"__p" xml:"__p"`
-	/// DO NOT MODIFY THIS UNLESS YOU ARE BIG BRAIN
-	Sort string `json:"__s" csv:"__s" xml:"__s"`
-
-	Label string `json:"__l" csv:"__l" xml:"__l"`
-
-	/// The Type of V2 that this edge points to.
-	/// This exists to faciliate easier lookup within an in memeory partition map.
-	Type string `json:"__t" csv:"__t" xml:"__t"`
-
-	/// The Id of V2 that this edge points to.
-	/// This exists to faciliate easier lookup within an in memeory partition map.
-	Id string `json:"__i" csv:"__i" xml:"__i"`
-
-	attr map[string]*dynamodb.AttributeValue
+	V1 *Vertex `json:"-" csv:"-" xml:"-"`
+	V2 *Vertex `json:"-" csv:"-" xml:"-"`
 }
 
-func (e edge) toMap() (map[string]*dynamodb.AttributeValue, error) {
+func (e *Edge) graphId() *string {
+	p := e.Direction.String() + strings.Join([]string{e.Label, *e.V2.graphId()}, keyDelimiter)
+	return &p
+}
 
-	eMap, err := dynamodbattribute.MarshalMap(e)
-	if err != nil {
-		return nil, err
+type edgeDirection string
+
+const (
+	OutgoingEdgeMarker = ">"
+	IncomingEdgeMarker = "<"
+
+	OUT = edgeDirection(OutgoingEdgeMarker)
+	IN  = edgeDirection(IncomingEdgeMarker)
+)
+
+func (e edgeDirection) String() string {
+	if e == OUT {
+		return OutgoingEdgeMarker
+	} else {
+		return IncomingEdgeMarker
+	}
+}
+
+func (e *Edge) MarshalAttributeValueMap() (map[string]*dynamodb.AttributeValue, error) {
+	type Alias Edge
+	return dynamodbattribute.MarshalMap(&struct {
+		Partition *string `json:"__p" csv:"__p" xml:"__p"`
+		Sort      *string `json:"__s" csv:"__s" xml:"__s"`
+		*Alias
+	}{
+		Partition: e.V1.graphId(),
+		Sort:      e.graphId(),
+		Alias:     (*Alias)(e),
+	})
+}
+
+type EdgeValidationError int
+
+func (err EdgeValidationError) Error() string {
+	switch err {
+	case NotAnEdge:
+		return "The given map is not an edge representation."
 	}
 
-	for key, value := range e.attr {
+	return ""
+}
 
-		///TODO: Detect overlap and return err
-		eMap[key] = value
+const (
+	NotAnEdge = EdgeValidationError(iota)
+)
+
+func (e *Edge) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
+	type Alias Edge
+	return dynamodbattribute.UnmarshalMap(m, &struct {
+		Partition *string `json:"__p" csv:"__p" xml:"__p"`
+		Sort      *string `json:"__s" csv:"__s" xml:"__s"`
+		*Alias
+	}{
+		Alias: (*Alias)(e),
+	})
+}
+
+func (e Edge) Mirror() Edge {
+	v1 := e.V1
+	e.V1 = e.V2
+	e.V2 = v1
+
+	if e.Direction == OUT {
+		e.Direction = IN
+	} else {
+		e.Direction = OUT
 	}
 
-	return eMap, err
+	return e
 }
 
 /*
 	Writes an Edge to the tableName.
 	NOTE: This call fails if the two vertices have not previously been written.
 */
-func (V1 *vertex) AddEdge(Label string, V2 *vertex, Attr interface{}) (*edge, error) {
+func (V1 *Vertex) AddEdge(Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
 
-	attrMap, err := dynamodbattribute.MarshalMap(Attr)
-	if err != nil {
-		return nil, err
-	}
-
-	/// Create an edge from V1 out to v2
-	v1Outv2 := edge{
-		Partition: V1.Partition,
-		Sort:      outgoingEdgeMarker + Label + keyDelimiter + V2.Partition,
+	/// Create an Edge from V1 out to v2
+	v1Outv2 := Edge{
 		Label:     Label,
-		Type:      V2.Type,
-		Id:        V2.Id,
-		attr:      attrMap,
+		V1:        V1,
+		V2:        V2,
+		Direction: OUT,
+		Attr:      Attr,
 	}
-	v1Outv2Map, err := v1Outv2.toMap()
+	v1Outv2Map, err := v1Outv2.MarshalAttributeValueMap()
 	if err != nil {
 		return nil, err
 	}
+
 	/// Copy V2 so we can write it into the V1 partition
-	v2CopyMap, err := copyVertex(V2, V1).toMap()
+	v2CopyMap, err := V2.MarshalAttributeValueMap(V1.graphId())
 	if err != nil {
 		return nil, err
 	}
 
 	/// MIRROR
-	/// This section effectively mirrors the edge and copied vertex into V2's partition.
+	/// This section effectively mirrors the Edge and copied Vertex into V2's partition.
 	/// The intention here is to pay storage costs for the sake of faster out vs in queries later.
-	/// Create the mirror of the intended edge for easier queries later.
-	v2Inv1Map, err := edge{
-		Partition: V2.Partition,
-		Sort:      incomingEdgeMarker + Label + keyDelimiter + V1.Partition,
+	/// Create the mirror of the intended Edge for easier queries later.
+	v2InV1 := Edge{
 		Label:     Label,
-		Type:      V1.Type,
-		Id:        V1.Id,
-		attr:      attrMap,
-	}.toMap()
+		V1:        V2,
+		V2:        V1,
+		Direction: IN,
+		Attr:      Attr,
+	}
+	v2InV1Map, err := v2InV1.MarshalAttributeValueMap()
 	if err != nil {
 		return nil, err
 	}
+
 	/// Copy V1 into V2's partition
-	v1CopyMap, err := copyVertex(V1, V2).toMap()
+	v1CopyMap, err := V1.MarshalAttributeValueMap(V2.graphId())
 	if err != nil {
 		return nil, err
 	}
 
 	expr, err := expression.NewBuilder().
-		WithCondition(expression.AttributeExists(expression.Name(sortKeyName))).
+		WithCondition(expression.AttributeExists(expression.Name(SortKeyName))).
 		Build()
 	if err != nil {
 		return nil, err
@@ -119,8 +160,8 @@ func (V1 *vertex) AddEdge(Label string, V2 *vertex, Attr interface{}) (*edge, er
 					ExpressionAttributeNames:  expr.Names(),
 					ExpressionAttributeValues: expr.Values(),
 					Key: map[string]*dynamodb.AttributeValue{
-						partitionKeyName: {S: aws.String(V1.Partition)},
-						sortKeyName:      {S: aws.String(V1.Partition)},
+						PartitionKeyName: {S: V1.graphId()},
+						SortKeyName:      {S: V1.graphId()},
 					},
 					TableName: &V1.g.tableName,
 				},
@@ -133,14 +174,14 @@ func (V1 *vertex) AddEdge(Label string, V2 *vertex, Attr interface{}) (*edge, er
 					ExpressionAttributeNames:  expr.Names(),
 					ExpressionAttributeValues: expr.Values(),
 					Key: map[string]*dynamodb.AttributeValue{
-						partitionKeyName: {S: aws.String(V2.Partition)},
-						sortKeyName:      {S: aws.String(V2.Partition)},
+						PartitionKeyName: {S: V2.graphId()},
+						SortKeyName:      {S: V2.graphId()},
 					},
 					TableName: &V1.g.tableName,
 				},
 			},
 
-			/// Write the new edge into V1's partition.
+			/// Write the new Edge into V1's partition.
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
 					Item:      v1Outv2Map,
@@ -157,10 +198,10 @@ func (V1 *vertex) AddEdge(Label string, V2 *vertex, Attr interface{}) (*edge, er
 			},
 
 			/// MIRROR
-			/// Write the new edge into V1's partition.
+			/// Write the new Edge into V1's partition.
 			&dynamodb.TransactWriteItem{
 				Put: &dynamodb.Put{
-					Item:      v2Inv1Map,
+					Item:      v2InV1Map,
 					TableName: &V1.g.tableName,
 				},
 			},
@@ -180,12 +221,4 @@ func (V1 *vertex) AddEdge(Label string, V2 *vertex, Attr interface{}) (*edge, er
 	}
 
 	return &v1Outv2, nil
-
-}
-
-/// Copies v2 into v1's partition.
-func copyVertex(v2, v1 *vertex) *vertex {
-	v2Copy := *v2
-	v2Copy.Partition = v1.Partition
-	return &v2Copy
 }
