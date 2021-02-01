@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -76,6 +77,10 @@ func (v *Vertex) GetAttributesAs(out interface{}) error {
 }
 
 func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
+	return g.AddVertexWithContext(context.Background(), Type, Id, Attr)
+}
+
+func (g *graph) AddVertexWithContext(ctx context.Context, Type, Id string, Attr interface{}) (*Vertex, error) {
 
 	v := Vertex{
 		Type: Type,
@@ -96,7 +101,7 @@ func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
 		return nil, err
 	}
 
-	_, err = g.dynamodb.PutItem(&dynamodb.PutItemInput{
+	_, err = g.dynamodb.PutItemWithContext(ctx, &dynamodb.PutItemInput{
 		Item:      vMap,
 		TableName: aws.String(g.tableName),
 	})
@@ -108,6 +113,10 @@ func (g *graph) AddVertex(Type, Id string, Attr interface{}) (*Vertex, error) {
 }
 
 func (g *graph) GetVertex(Type, Id string) (*Vertex, error) {
+	return g.GetVertexWithContext(context.Background(), Type, Id)
+}
+
+func (g *graph) GetVertexWithContext(ctx context.Context, Type, Id string) (*Vertex, error) {
 
 	v := Vertex{
 		Type: Type,
@@ -116,7 +125,7 @@ func (g *graph) GetVertex(Type, Id string) (*Vertex, error) {
 		g:    g,
 	}
 
-	output, err := g.dynamodb.GetItem(&dynamodb.GetItemInput{
+	output, err := g.dynamodb.GetItemWithContext(ctx, &dynamodb.GetItemInput{
 		Key: map[string]*dynamodb.AttributeValue{
 			PartitionKeyName: {
 				S: v.graphId(),

@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
@@ -10,17 +9,10 @@ type graph struct {
 	dynamodb  *dynamodb.DynamoDB
 }
 
-func New(tableName string, sess *session.Session) *graph {
-
-	if sess == nil {
-		sess = session.Must(session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-		}))
-	}
-
+func New(tableName string, dynamodb *dynamodb.DynamoDB) *graph {
 	return &graph{
 		tableName: tableName,
-		dynamodb:  dynamodb.New(sess),
+		dynamodb:  dynamodb,
 	}
 }
 

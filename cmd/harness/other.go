@@ -40,7 +40,7 @@ func main() {
 
 	/// person1 -> friendship -> person2
 	/// person2 <- friendship <- person1 (Creates Mirror)
-	friendship, err := person1.AddEdge("friendship", person2, Friendship{
+	friendship, err := g.AddEdge(person1, "friendship", person2, Friendship{
 		Start: time.Now(),
 	})
 	if err != nil {

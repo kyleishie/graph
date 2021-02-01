@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
@@ -119,11 +120,15 @@ func (e Edge) Mirror() Edge {
 	return e
 }
 
+func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
+	return g.AddEdgeWithContext(context.Background(), V1, Label, V2, Attr)
+}
+
 /*
 	Writes an Edge to the tableName.
 	NOTE: This call fails if the two vertices have not previously been written.
 */
-func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
+func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) (*Edge, error) {
 
 	/// Create an Edge from V1 out to v2
 	v1Outv2 := Edge{
@@ -188,7 +193,7 @@ func (g *graph) AddEdge(V1 *Vertex, Label string, V2 *Vertex, Attr interface{}) 
 	}
 
 	/// See the comments inline with the individual transact items.
-	_, err = g.dynamodb.TransactWriteItems(&dynamodb.TransactWriteItemsInput{
+	_, err = g.dynamodb.TransactWriteItemsWithContext(ctx, &dynamodb.TransactWriteItemsInput{
 		ClientRequestToken:          nil,
 		ReturnConsumedCapacity:      nil,
 		ReturnItemCollectionMetrics: nil,
