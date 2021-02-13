@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
@@ -12,17 +13,10 @@ import (
 type Edge struct {
 	Direction edgeDirection `json:"__d" csv:"__d" xml:"__d"`
 	Label     string        `json:"__l" csv:"__l" xml:"__l"`
-	attr      json.RawMessage
+	Attr      json.RawMessage
 
 	V1 *Vertex `json:"-" csv:"-" xml:"-"`
 	V2 *Vertex `json:"-" csv:"-" xml:"-"`
-
-	g *graph
-}
-
-func (e *Edge) graphId() *string {
-	p := e.Direction.String() + strings.Join([]string{e.Label, *e.V2.graphId()}, keyDelimiter)
-	return &p
 }
 
 type edgeDirection string
@@ -52,58 +46,46 @@ type edgeDDBRepresentation struct {
 	*edgeAlias
 }
 
-func (e *Edge) MarshalAttributeValueMap() (map[string]*dynamodb.AttributeValue, error) {
-	return dynamodbattribute.MarshalMap(&edgeDDBRepresentation{
-		Partition: e.V1.graphId(),
-		Sort:      e.graphId(),
-		Attr:      e.attr,
+func (e *Edge) ddbRepresentation() edgeDDBRepresentation {
+	return edgeDDBRepresentation{
+		Partition: aws.String(e.V1.ddbRepresentation().Partition),
+		Sort:      aws.String(e.Direction.String() + e.Label + keyDelimiter + e.V2.ddbRepresentation().Partition),
+		Attr:      e.Attr,
 		edgeAlias: (*edgeAlias)(e),
-	})
+	}
 }
 
-//type EdgeValidationError int
-//
-//func (err EdgeValidationError) Error() string {
-//	switch err {
-//	case NotAnEdge:
-//		return "The given map is not an edge representation."
-//	}
-//
-//	return ""
-//}
-//
-//const (
-//	NotAnEdge = EdgeValidationError(iota)
-//)
+func (e *Edge) MarshalAttributeValueMap() (map[string]*dynamodb.AttributeValue, error) {
+	ddbRep := e.ddbRepresentation()
+	return dynamodbattribute.MarshalMap(&ddbRep)
+}
 
-func (e *Edge) UnmarshalAttributeValueMap(m map[string]*dynamodb.AttributeValue) error {
+func NewEdgeFromAttributeValueMap(m map[string]*dynamodb.AttributeValue, e *Edge) error {
 	alias := edgeDDBRepresentation{
 		edgeAlias: (*edgeAlias)(e),
 	}
 	if err := dynamodbattribute.UnmarshalMap(m, &alias); err != nil {
 		return err
 	}
-	e.attr = alias.Attr
+	e.Attr = alias.Attr
 
 	par := strings.Split(*alias.Partition, keyDelimiter)
 	e.V1 = &Vertex{
 		Type: par[0],
 		Id:   par[1],
-		g:    e.g,
 	}
 
 	sort := strings.Split(*alias.Sort, keyDelimiter)
 	e.V2 = &Vertex{
 		Type: sort[1],
 		Id:   sort[2],
-		g:    e.g,
 	}
 
 	return nil
 }
 
 func (e *Edge) GetAttributesAs(out interface{}) error {
-	return json.Unmarshal(e.attr, out)
+	return json.Unmarshal(e.Attr, out)
 }
 
 func (e Edge) Mirror() Edge {
@@ -136,14 +118,13 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 		V1:        V1,
 		V2:        V2,
 		Direction: OUT,
-		g:         g,
 	}
 	if Attr != nil {
 		attr, err := json.Marshal(Attr)
 		if err != nil {
 			return nil, err
 		}
-		v1Outv2.attr = attr
+		v1Outv2.Attr = attr
 	}
 
 	v1Outv2Map, err := v1Outv2.MarshalAttributeValueMap()
@@ -152,7 +133,7 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 	}
 
 	/// Copy V2 so we can write it into the V1 partition
-	v2CopyMap, err := V2.MarshalAttributeValueMap(V1.graphId())
+	v2CopyMap, err := V2.MarshalAttributeValueMapWithinPartition(V1.ddbRepresentation().Partition)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +153,7 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 		if err != nil {
 			return nil, err
 		}
-		v2InV1.attr = attr
+		v2InV1.Attr = attr
 	}
 	v2InV1Map, err := v2InV1.MarshalAttributeValueMap()
 	if err != nil {
@@ -180,7 +161,7 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 	}
 
 	/// Copy V1 into V2's partition
-	v1CopyMap, err := V1.MarshalAttributeValueMap(V2.graphId())
+	v1CopyMap, err := V1.MarshalAttributeValueMapWithinPartition(V2.ddbRepresentation().Partition)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +187,8 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 					ExpressionAttributeNames:  expr.Names(),
 					ExpressionAttributeValues: expr.Values(),
 					Key: map[string]*dynamodb.AttributeValue{
-						PartitionKeyName: {S: V1.graphId()},
-						SortKeyName:      {S: V1.graphId()},
+						PartitionKeyName: {S: aws.String(V1.ddbRepresentation().Partition)},
+						SortKeyName:      {S: aws.String(V1.ddbRepresentation().Sort)},
 					},
 					TableName: &g.tableName,
 				},
@@ -220,8 +201,8 @@ func (g *graph) AddEdgeWithContext(ctx context.Context, V1 *Vertex, Label string
 					ExpressionAttributeNames:  expr.Names(),
 					ExpressionAttributeValues: expr.Values(),
 					Key: map[string]*dynamodb.AttributeValue{
-						PartitionKeyName: {S: V2.graphId()},
-						SortKeyName:      {S: V2.graphId()},
+						PartitionKeyName: {S: aws.String(V2.ddbRepresentation().Partition)},
+						SortKeyName:      {S: aws.String(V2.ddbRepresentation().Partition)},
 					},
 					TableName: &g.tableName,
 				},

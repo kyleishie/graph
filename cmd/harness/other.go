@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"graph"
 	"time"
 )
@@ -18,7 +21,11 @@ type Friendship struct {
 
 func main() {
 
-	g := graph.New("graph1", nil)
+	var dynamodbClient = dynamodb.New(session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	})))
+
+	g := graph.New("graph1", dynamodbClient)
 
 	person1, err := g.AddVertex("PERSON", "person1", Person{
 		Email:     "person1",
@@ -62,5 +69,12 @@ func main() {
 	}
 
 	fmt.Println(p1)
+
+	jsonData, err := json.Marshal(v)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Println(string(jsonData))
 
 }
