@@ -37,13 +37,11 @@ func (e edgeDirection) String() string {
 	}
 }
 
-type edgeAlias Edge
 type edgeDDBRepresentation struct {
 	Partition *string         `json:"__p" csv:"__p" xml:"__p"`
 	Sort      *string         `json:"__s" csv:"__s" xml:"__s"`
 	Attr      json.RawMessage `json:"__a" csv:"__a" xml:"__a"`
-
-	*edgeAlias
+	*Edge
 }
 
 func (e *Edge) ddbRepresentation() edgeDDBRepresentation {
@@ -51,7 +49,7 @@ func (e *Edge) ddbRepresentation() edgeDDBRepresentation {
 		Partition: aws.String(e.V1.ddbRepresentation().Partition),
 		Sort:      aws.String(e.Direction.String() + e.Label + keyDelimiter + e.V2.ddbRepresentation().Partition),
 		Attr:      e.Attr,
-		edgeAlias: (*edgeAlias)(e),
+		Edge:      e,
 	}
 }
 
@@ -60,28 +58,28 @@ func (e *Edge) MarshalAttributeValueMap() (map[string]*dynamodb.AttributeValue, 
 	return dynamodbattribute.MarshalMap(&ddbRep)
 }
 
-func NewEdgeFromAttributeValueMap(m map[string]*dynamodb.AttributeValue, e *Edge) error {
-	alias := edgeDDBRepresentation{
-		edgeAlias: (*edgeAlias)(e),
+func NewEdgeFromAttributeValueMap(m map[string]*dynamodb.AttributeValue) (*Edge, error) {
+	var e *Edge
+	ddbRep := edgeDDBRepresentation{
+		Edge: e,
 	}
-	if err := dynamodbattribute.UnmarshalMap(m, &alias); err != nil {
-		return err
+	if err := dynamodbattribute.UnmarshalMap(m, &ddbRep); err != nil {
+		return nil, err
 	}
-	e.Attr = alias.Attr
 
-	par := strings.Split(*alias.Partition, keyDelimiter)
+	par := strings.Split(*ddbRep.Partition, keyDelimiter)
 	e.V1 = &Vertex{
 		Type: par[0],
 		Id:   par[1],
 	}
 
-	sort := strings.Split(*alias.Sort, keyDelimiter)
+	sort := strings.Split(*ddbRep.Sort, keyDelimiter)
 	e.V2 = &Vertex{
 		Type: sort[1],
 		Id:   sort[2],
 	}
 
-	return nil
+	return e, nil
 }
 
 func (e *Edge) GetAttributesAs(out interface{}) error {
